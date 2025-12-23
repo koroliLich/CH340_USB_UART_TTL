@@ -31,6 +31,8 @@
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
+extern UART_HandleTypeDef huart1;
+
 /* USER CODE END PV */
 
 /* USER CODE BEGIN PFP */
@@ -103,26 +105,31 @@ void MX_USB_HOST_Process(void)
 static void USBH_UserProcess  (USBH_HandleTypeDef *phost, uint8_t id)
 {
   /* USER CODE BEGIN CALL_BACK_1 */
-  switch(id)
-  {
-  case HOST_USER_SELECT_CONFIGURATION:
-  break;
+	switch(id) {
 
-  case HOST_USER_DISCONNECTION:
-  Appli_state = APPLICATION_DISCONNECT;
-  break;
+	case HOST_USER_SELECT_CONFIGURATION:
+		HAL_UART_Transmit(&huart1, (uint8_t*)"[USB] SELECT_CONFIGURATION\r\n", 28, 100);
+		break;
 
-  case HOST_USER_CLASS_ACTIVE:
-  Appli_state = APPLICATION_READY;
-  break;
+	case HOST_USER_DISCONNECTION:
+	    Appli_state = APPLICATION_DISCONNECT;
+	    HAL_UART_Transmit(&huart1, (uint8_t*)"[USB] DISCONNECTION\r\n", 21, 100);
+	    break;
 
-  case HOST_USER_CONNECTION:
-  Appli_state = APPLICATION_START;
-  break;
+	case HOST_USER_CLASS_ACTIVE:
+	    Appli_state = APPLICATION_READY;
+	    HAL_UART_Transmit(&huart1, (uint8_t*)"[USB] CLASS_ACTIVE\r\n", 20, 100);
+	    break;
 
-  default:
-  break;
-  }
+	case HOST_USER_CONNECTION:
+	    Appli_state = APPLICATION_START;
+	    HAL_UART_Transmit(&huart1, (uint8_t*)"[USB] CONNECTION\r\n", 18, 100);
+	    break;
+
+	default:
+		break;
+
+	}
   /* USER CODE END CALL_BACK_1 */
 }
 

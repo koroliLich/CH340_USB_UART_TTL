@@ -23,6 +23,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include "usbh_cdc.h"
+#include "ch340.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,6 +35,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+#define BUFFER_SIZE 10
+#define UART_TIMEOUT 100
 
 /* USER CODE END PD */
 
@@ -44,6 +50,16 @@
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
+
+uint8_t data_buffer[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+
+uint8_t is_ch340_initialized = 0;
+volatile uint8_t rx_complete_flag = 0;
+
+char msg[64];
+
+extern USBH_HandleTypeDef hUsbHostFS;
+extern ApplicationTypeDef Appli_state;
 
 /* USER CODE END PV */
 
@@ -59,6 +75,20 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+void ReverseArray(uint8_t *arr, uint32_t len) {
+    uint32_t start = 0;
+    uint32_t end = len - 1;
+    uint8_t temp;
+
+    while (start < end) {
+        temp = arr[start];
+        arr[start] = arr[end];
+        arr[end] = temp;
+        start++;
+        end--;
+    }
+}
 
 /* USER CODE END 0 */
 
@@ -99,12 +129,67 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
   while (1)
   {
     /* USER CODE END WHILE */
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
+
+    if (Appli_state == APPLICATION_READY) {
+    	if (!is_ch340_initialized) {
+    		if(CH340_Init(&hUsbHostFS, 9600) == USBH_OK) {
+    			is_ch340_initialized = 1;
+    			HAL_UART_Transmit(&huart1, (uint8_t*)"Init complete. Waiting for Button...\r\n", 38, UART_TIMEOUT);
+    		} else {
+    			HAL_UART_Transmit(&huart1, (uint8_t*)"Init failed. Retrying...\r\n", 26, UART_TIMEOUT);
+    			HAL_Delay(100); // to next init
+    		}
+    	}
+
+    	if (is_ch340_initialized && rx_complete_flag == 0) {
+    		if (HAL_GPIO_ReadPin(UserKEY_GPIO_Port, UserKEY_Pin) == GPIO_PIN_RESET) {
+    			HAL_Delay(200); // debounce
+
+    			HAL_UART_Transmit(&huart1, (uint8_t*)"\r\nButton pressed: \r\n", 20, UART_TIMEOUT);
+                HAL_UART_Transmit(&huart1, (uint8_t*)"TX Data (via USB) - ", 20, UART_TIMEOUT);
+
+                for(int i = 0; i < BUFFER_SIZE; i++) {
+                	sprintf(msg, "%u", data_buffer[i]);
+                	HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), UART_TIMEOUT);
+
+                }
+                HAL_UART_Transmit(&huart1, (uint8_t*)"\r\n", 2, UART_TIMEOUT);
+
+                // receive before transmit via usb
+                HAL_UART_Receive_IT(&huart1, data_buffer, BUFFER_SIZE);
+                USBH_CDC_Transmit(&hUsbHostFS, data_buffer, BUFFER_SIZE);
+                }
+            }
+
+    	if (rx_complete_flag == 1) {
+    		HAL_UART_Transmit(&huart1, (uint8_t*)"RX Data (via USART) - ", 22, UART_TIMEOUT);
+
+    		for(int i = 0; i < BUFFER_SIZE; i++) {
+    			sprintf(msg, "%u", data_buffer[i]);
+    			HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), UART_TIMEOUT);
+    		}
+
+    		ReverseArray(data_buffer, BUFFER_SIZE);
+    		HAL_UART_Transmit(&huart1, (uint8_t*)"\r\nReversed data - ", 18, UART_TIMEOUT);
+
+    		for(int i = 0; i < BUFFER_SIZE; i++) {
+    			sprintf(msg, "%u", data_buffer[i]);
+    			HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), UART_TIMEOUT);
+    		}
+
+    		HAL_UART_Transmit(&huart1, (uint8_t*)"\r\n", 2, UART_TIMEOUT);
+
+            rx_complete_flag = 0;
+
+    	}
+    } else is_ch340_initialized = 0;
   }
   /* USER CODE END 3 */
 }
@@ -172,7 +257,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
+  huart1.Init.BaudRate = 9600;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -196,13 +281,41 @@ static void MX_USART1_UART_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
   /* USER CODE BEGIN MX_GPIO_Init_1 */
 
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(UserLED_GPIO_Port, UserLED_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : UserLED_Pin */
+  GPIO_InitStruct.Pin = UserLED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(UserLED_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : UserKEY_Pin */
+  GPIO_InitStruct.Pin = UserKEY_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(UserKEY_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -210,6 +323,13 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART1) {
+    	rx_complete_flag = 1;
+    }
+}
 
 /* USER CODE END 4 */
 
