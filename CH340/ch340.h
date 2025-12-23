@@ -7,6 +7,7 @@
 #define CH34x_VENDOR_ID			0x1A86
 #define CH340_PRODUCT_ID        0x7523
 #define CH341_PRODUCT_ID		0x5523
+#define CH343P_PRODUCT_ID   	0x55D3 // current module
 
 #define VENDOR_WRITE_TYPE       0x40  // stm -> ch340
 #define VENDOR_READ_TYPE        0xC0  // ch340 -> stm
